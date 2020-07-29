@@ -11,9 +11,9 @@ use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(about = "Slice a byte range from a file",
-            setting = AppSettings::ColoredHelp,
-            max_term_width = 80)]
+#[structopt(about = "Slice a byte range from a file")]
+#[structopt(setting = AppSettings::ColoredHelp)]
+#[structopt(max_term_width = 80)]
 struct Args {
     /// Hexdump the output
     #[structopt(short = "H", long)]
