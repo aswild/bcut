@@ -51,11 +51,14 @@ struct Range {
 impl Range {
     fn from_str(s: &str) -> Result<Self> {
         let re = Regex::new(
-            r"^(?P<start>(?:0[xX])?[0-9a-fA-F]+)?(?P<sep>[+-])(?P<end>(?:0[xX])?[0-9a-fA-F]+)?$",
+            r"^(?P<start>(?:0x)?[0-9a-fA-F]+)?(?P<sep>[+-])(?P<end>(?:0x)?[0-9a-fA-F]+)?$",
         )
         .unwrap();
 
-        let caps = re.captures(s).ok_or_else(|| anyhow!("invalid range"))?;
+        let caps = re
+            .captures(s)
+            .ok_or_else(|| anyhow!("invalid range. See `bcut --help` for range format details."))?;
+
         let sep = caps.name("sep").unwrap().as_str();
 
         let start: u64 = caps
