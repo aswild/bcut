@@ -111,10 +111,9 @@ impl Range {
 }
 
 fn parse_number(s: &str) -> Result<u64, std::num::ParseIntError> {
-    if s.starts_with("0x") {
-        u64::from_str_radix(&s[2..], 16)
-    } else {
-        s.parse::<u64>()
+    match s.strip_prefix("0x") {
+        Some(x) => u64::from_str_radix(x, 16),
+        None => s.parse::<u64>(),
     }
 }
 
