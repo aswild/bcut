@@ -1,6 +1,6 @@
 [package]
 name = "bcut"
-version = "1.0.2"
+version = "1.0.3"
 authors = ["Allen Wild <allenwild93@gmail.com>"]
 license = "Apache-2.0"
 edition = "2018"
