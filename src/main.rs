@@ -66,7 +66,7 @@ impl Range {
             .map(|m| parse_number(m.as_str())) // Option<Result<u64>>
             .transpose() // Result<Option<u64>>
             .with_context(|| {
-                anyhow!(
+                format!(
                     // add error context (must use closure in case match is None)
                     "bad range start '{}'",
                     caps.name("start").unwrap().as_str()
@@ -84,7 +84,7 @@ impl Range {
             .name("end")
             .map(|m| parse_number(m.as_str()))
             .transpose()
-            .with_context(|| anyhow!("bad range end '{}'", caps.name("end").unwrap().as_str()))?;
+            .with_context(|| format!("bad range end '{}'", caps.name("end").unwrap().as_str()))?;
 
         let count: Option<u64> = match (sep, end) {
             // read from start to EOF
@@ -132,7 +132,7 @@ fn open_input<'a>(path: &Option<PathBuf>, stdin: &'a io::Stdin) -> Result<Input<
     }
 }
 
-fn real_main() -> Result<()> {
+fn run() -> Result<()> {
     let args = Args::from_args();
     let range = Range::from_str(args.range.as_str())?;
 
@@ -164,7 +164,7 @@ fn real_main() -> Result<()> {
 }
 
 fn main() {
-    if let Err(err) = real_main() {
+    if let Err(err) = run() {
         eprintln!("Error: {:#}", err);
         std::process::exit(1);
     }
