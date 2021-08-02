@@ -7,7 +7,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1"
-hexyl = "0.8"
+hexyl = { git = "https://github.com/aswild/hexyl", default-features = false }
 structopt = "0.3"
 
 [dependencies.regex]
