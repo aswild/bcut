@@ -20,6 +20,10 @@ use structopt::StructOpt;
     max_term_width = 80,
 )]
 struct Args {
+    /// Output file, omit or use "-" for stdout
+    #[structopt(short, long, name = "OUTFILE", parse(from_os_str))]
+    output: Option<PathBuf>,
+
     /// Hexdump the output
     #[structopt(short = "H", long)]
     hexdump: bool,
@@ -157,16 +161,21 @@ fn run() -> Result<()> {
         None => Box::new(input),
     };
 
-    let mut stdout = io::stdout();
+    let mut output: Box<dyn Write> = match &args.output {
+        None => Box::new(io::stdout()),
+        Some(p) if p.to_str() == Some("-") => Box::new(io::stdout()),
+        Some(path) => Box::new(File::create(path).context("failed to open output file")?),
+    };
+
     if args.hexdump {
-        let mut printer = Printer::new(&mut stdout, true, BorderStyle::Unicode, true);
+        let mut printer = Printer::new(&mut output, true, BorderStyle::Unicode, true);
         // have to re-map the error with anyhow because print_all in hexyl 0.8.0 returns an unsized
         // Box<dyn std::error::Error>
         printer
             .print_all(&mut input)
             .map_err(|e| anyhow!("{}", e))?;
     } else {
-        io::copy(&mut input, &mut stdout)?;
+        io::copy(&mut input, &mut output)?;
     }
 
     Ok(())
