@@ -189,14 +189,17 @@ mod tests {
     use super::Range;
 
     macro_rules! assert_range_matches {
-        ($s:expr, $( $pattern:pat )|+ $( if $guard:expr )?) => {
-            let result = Range::from_str($s);
-            match result {
-                $( $pattern )|+ $( if $guard )? => (),
-                x => panic!("range '{}' = '{:?}' does not match '{}'",
-                            $s, x, stringify!($( $pattern )|+ $( if $guard )?)),
+        ($s:expr, $pattern:pat) => {
+            match $s.parse::<Range>() {
+                $pattern => (),
+                x => panic!(
+                    "range '{}' = '{:?}' does not match '{}'",
+                    $s,
+                    x,
+                    stringify!($pattern)
+                ),
             }
-        }
+        };
     }
 
     macro_rules! range_test {
