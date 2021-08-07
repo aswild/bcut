@@ -61,8 +61,18 @@ impl FromStr for Range {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self> {
+        /// helper function to parse a number as hex or decimal depending on 0x prefix,
+        /// and ignore underscores
+        fn parse_number(s: &str) -> Result<u64, std::num::ParseIntError> {
+            let s = s.replace('_', "");
+            match s.strip_prefix("0x") {
+                Some(x) => u64::from_str_radix(x, 16),
+                None => s.parse::<u64>(),
+            }
+        }
+
         let re = Regex::new(
-            r"^(?P<start>(?:0x)?[0-9a-fA-F]+)?(?P<sep>[+-])(?P<end>(?:0x)?[0-9a-fA-F]+)?$",
+            r"^(?P<start>(?:0x)?[[:xdigit:]_]+)?(?P<sep>[+-])(?P<end>(?:0x)?[[:xdigit:]_]+)?$",
         )
         .unwrap();
 
@@ -114,13 +124,6 @@ impl FromStr for Range {
         };
 
         Ok(Range { start, count })
-    }
-}
-
-fn parse_number(s: &str) -> Result<u64, std::num::ParseIntError> {
-    match s.strip_prefix("0x") {
-        Some(x) => u64::from_str_radix(x, 16),
-        None => s.parse::<u64>(),
     }
 }
 
@@ -220,8 +223,14 @@ mod tests {
         range_test!("0x200-", 512, None);
         range_test!("16-0xff", 16, 240);
 
+        range_test!("1_000-0xffff_ffff", 1000, 4294966296);
+        range_test!("1______0+", 10, None);
+        range_test!("1_2_3_4+99", 1234, 99);
+
         range_test!("asdf", Err);
         range_test!("1-0xabcR", Err);
         range_test!("10", Err);
+        range_test!("0x80000000_00000000+10", Err); // start exceeds isize
+        range_test!("0-0xffffffff_ffffffff", Err); // overflow
     }
 }
