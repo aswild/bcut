@@ -169,11 +169,7 @@ fn run() -> Result<()> {
 
     if args.hexdump {
         let mut printer = Printer::new(&mut output, true, BorderStyle::Unicode, true);
-        // have to re-map the error with anyhow because print_all in hexyl 0.8.0 returns an unsized
-        // Box<dyn std::error::Error>
-        printer
-            .print_all(&mut input)
-            .map_err(|e| anyhow!("{}", e))?;
+        printer.print_all(&mut input)?;
     } else {
         io::copy(&mut input, &mut output)?;
     }

@@ -89,7 +89,7 @@ dependencies = [
 [[package]]
 name = "hexyl"
 version = "0.9.0"
-source = "git+https://github.com/aswild/hexyl#43585dbb3bb2f4f5fe51a408914d114c3c929015"
+source = "git+https://github.com/aswild/hexyl#370a8d85ec3f647242a21ece05da50f5a6eb0456"
 dependencies = [
  "ansi_term 0.12.1",
  "libc",
