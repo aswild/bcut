@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use anyhow::{anyhow, Context, Result};
 use hexyl::{BorderStyle, Input, Printer};
@@ -11,9 +12,13 @@ use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(about = "Slice a byte range from a file")]
-#[structopt(setting = AppSettings::ColoredHelp)]
-#[structopt(max_term_width = 80)]
+#[structopt(
+    about = "Slice a byte range from a file",
+    setting = AppSettings::ColoredHelp,
+    setting = AppSettings::DeriveDisplayOrder,
+    setting = AppSettings::UnifiedHelpMessage,
+    max_term_width = 80,
+)]
 struct Args {
     /// Hexdump the output
     #[structopt(short = "H", long)]
@@ -48,16 +53,18 @@ struct Range {
     count: Option<u64>,
 }
 
-impl Range {
+impl FromStr for Range {
+    type Err = anyhow::Error;
+
     fn from_str(s: &str) -> Result<Self> {
         let re = Regex::new(
             r"^(?P<start>(?:0x)?[0-9a-fA-F]+)?(?P<sep>[+-])(?P<end>(?:0x)?[0-9a-fA-F]+)?$",
         )
         .unwrap();
 
-        let caps = re
-            .captures(s)
-            .ok_or_else(|| anyhow!("invalid range. See `bcut --help` for range format details."))?;
+        let caps = re.captures(s).ok_or_else(|| {
+            anyhow!("invalid format. See `bcut --help` for range format details.")
+        })?;
 
         let sep = caps.name("sep").unwrap().as_str();
 
@@ -68,7 +75,7 @@ impl Range {
             .with_context(|| {
                 format!(
                     // add error context (must use closure in case match is None)
-                    "bad range start '{}'",
+                    "invalid range start '{}'",
                     caps.name("start").unwrap().as_str()
                 )
             })? // return Err or unwrap to Option<u64>
@@ -84,7 +91,9 @@ impl Range {
             .name("end")
             .map(|m| parse_number(m.as_str()))
             .transpose()
-            .with_context(|| format!("bad range end '{}'", caps.name("end").unwrap().as_str()))?;
+            .with_context(|| {
+                format!("invalid range end '{}'", caps.name("end").unwrap().as_str())
+            })?;
 
         let count: Option<u64> = match (sep, end) {
             // read from start to EOF
@@ -134,7 +143,7 @@ fn open_input<'a>(path: &Option<PathBuf>, stdin: &'a io::Stdin) -> Result<Input<
 
 fn run() -> Result<()> {
     let args = Args::from_args();
-    let range = Range::from_str(args.range.as_str())?;
+    let range: Range = args.range.parse()?;
 
     let stdin = io::stdin();
     let mut input = open_input(&args.input, &stdin)?;
