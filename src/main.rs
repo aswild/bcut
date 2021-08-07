@@ -5,7 +5,7 @@ use std::io::{self, SeekFrom};
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use hexyl::{BorderStyle, Input, Printer};
 use regex::Regex;
 use structopt::clap::AppSettings;
@@ -73,31 +73,25 @@ impl FromStr for Range {
         let sep = caps.name("sep").unwrap().as_str();
 
         let start: u64 = caps
-            .name("start") // Option<Match>
-            .map(|m| parse_number(m.as_str())) // Option<Result<u64>>
-            .transpose() // Result<Option<u64>>
-            .with_context(|| {
-                format!(
-                    // add error context (must use closure in case match is None)
-                    "invalid range start '{}'",
-                    caps.name("start").unwrap().as_str()
-                )
-            })? // return Err or unwrap to Option<u64>
-            .unwrap_or(0); // if no start value provided, assume 0
+            .name("start")
+            .map(|cap| {
+                parse_number(cap.as_str())
+                    .with_context(|| format!("invalid range start '{}'", cap.as_str()))
+            })
+            .transpose()?
+            .unwrap_or(0);
 
         // we use start in SeekFrom::Current() which takes an i64. Thus make sure
         // this u64 can fit into an i64 and provide an error now rather than panic later.
-        if start > (i64::MAX as u64) {
-            return Err(anyhow!("range start {} exceeds i64::MAX", start));
-        }
+        ensure!(start <= i64::MAX as u64, "range start {} exceeds i64::MAX", start);
 
         let end: Option<u64> = caps
             .name("end")
-            .map(|m| parse_number(m.as_str()))
-            .transpose()
-            .with_context(|| {
-                format!("invalid range end '{}'", caps.name("end").unwrap().as_str())
-            })?;
+            .map(|cap| {
+                parse_number(cap.as_str())
+                    .with_context(|| format!("invalid range end '{}'", cap.as_str()))
+            })
+            .transpose()?;
 
         let count: Option<u64> = match (sep, end) {
             // read from start to EOF
@@ -137,9 +131,10 @@ fn open_input<'a>(path: &Option<PathBuf>, stdin: &'a io::Stdin) -> Result<Input<
             if let Some("-") = path.to_str() {
                 Ok(Input::Stdin(stdin.lock()))
             } else {
-                Ok(Input::File(File::open(path).with_context(|| {
-                    format!("unable to open '{}'", path.to_string_lossy())
-                })?))
+                Ok(Input::File(
+                    File::open(path)
+                        .with_context(|| format!("unable to open '{}'", path.to_string_lossy()))?,
+                ))
             }
         }
     }
@@ -192,12 +187,7 @@ mod tests {
         ($s:expr, $pattern:pat) => {
             match $s.parse::<Range>() {
                 $pattern => (),
-                x => panic!(
-                    "range '{}' = '{:?}' does not match '{}'",
-                    $s,
-                    x,
-                    stringify!($pattern)
-                ),
+                x => panic!("range '{}' = '{:?}' does not match '{}'", $s, x, stringify!($pattern)),
             }
         };
     }
@@ -207,22 +197,10 @@ mod tests {
             assert_range_matches!($s, Err(_))
         };
         ($s:expr, $start:expr, None) => {
-            assert_range_matches!(
-                $s,
-                Ok(Range {
-                    start: $start,
-                    count: None
-                })
-            );
+            assert_range_matches!($s, Ok(Range { start: $start, count: None }));
         };
         ($s:expr, $start:expr, $count:expr) => {
-            assert_range_matches!(
-                $s,
-                Ok(Range {
-                    start: $start,
-                    count: Some($count)
-                })
-            );
+            assert_range_matches!($s, Ok(Range { start: $start, count: Some($count) }));
         };
     }
 
