@@ -1,3 +1,6 @@
+#![deny(clippy::all)]
+#![forbid(unsafe_code)]
+
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::prelude::*;
@@ -6,26 +9,24 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use anyhow::{anyhow, ensure, Context, Result};
+use clap::{AppSettings, Parser};
 use hexyl::{BorderStyle, Input, Printer};
 use regex::Regex;
-use structopt::clap::AppSettings;
-use structopt::StructOpt;
 
-#[derive(Debug, StructOpt)]
-#[structopt(
-    about = "Slice a byte range from a file",
-    setting = AppSettings::ColoredHelp,
-    setting = AppSettings::DeriveDisplayOrder,
-    setting = AppSettings::UnifiedHelpMessage,
+/// Slice a byte range from a file
+#[derive(Debug, Parser)]
+#[clap(
     max_term_width = 80,
+    setting = AppSettings::DeriveDisplayOrder,
+    version,
 )]
 struct Args {
     /// Output file, omit or use "-" for stdout
-    #[structopt(short, long, name = "OUTFILE", parse(from_os_str))]
+    #[clap(short, long, name = "OUTFILE", parse(from_os_str))]
     output: Option<PathBuf>,
 
     /// Hexdump the output
-    #[structopt(short = "H", long)]
+    #[clap(short = 'H', long)]
     hexdump: bool,
 
     /// Byte range to select
@@ -37,15 +38,15 @@ struct Args {
     ///   N+M   select M bytes starting at N
     ///   N-    select bytes N through EOF
     ///   N+    same as N-
-    ///   -M    same as 0-M
-    ///   +M    same as 0+M
+    ///   -M    select first M bytes (same as 0-M)
+    ///   +M    same as -M
     ///   -     select the whole input (same as 0-)
     ///   +     select the whole input (same as 0+)
-    #[structopt(name = "RANGE", verbatim_doc_comment)]
+    #[clap(name = "RANGE", verbatim_doc_comment)]
     range: String,
 
     /// Input file, omit or use "-" for stdin
-    #[structopt(name = "FILE", parse(from_os_str))]
+    #[clap(name = "FILE", parse(from_os_str))]
     input: Option<PathBuf>,
 }
 
@@ -144,7 +145,8 @@ fn open_input<'a>(path: &Option<PathBuf>, stdin: &'a io::Stdin) -> Result<Input<
 }
 
 fn run() -> Result<()> {
-    let args = Args::from_args();
+    let args = Args::parse();
+    // parse range manually so we can control the error message rather than letting clap do it
     let range: Range = args.range.parse()?;
 
     let stdin = io::stdin();
