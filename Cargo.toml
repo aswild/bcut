@@ -8,7 +8,7 @@ edition = "2018"
 [dependencies]
 anyhow = "1"
 hexyl = { git = "https://github.com/aswild/hexyl", default-features = false }
-clap = { version = "3", features = ["cargo", "derive"] }
+clap = { version = "3", features = ["cargo", "derive", "deprecated"] }
 
 [dependencies.regex]
 version = "1.4"

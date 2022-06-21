@@ -22,7 +22,7 @@ use regex::Regex;
 )]
 struct Args {
     /// Output file, omit or use "-" for stdout
-    #[clap(short, long, name = "OUTFILE", parse(from_os_str))]
+    #[clap(short, long, name = "OUTFILE", value_parser)]
     output: Option<PathBuf>,
 
     /// Hexdump the output
@@ -43,10 +43,10 @@ struct Args {
     ///   -     select the whole input (same as 0-)
     ///   +     select the whole input (same as 0+)
     #[clap(name = "RANGE", verbatim_doc_comment)]
-    range: String,
+    range: Range,
 
     /// Input file, omit or use "-" for stdin
-    #[clap(name = "FILE", parse(from_os_str))]
+    #[clap(name = "FILE", value_parser)]
     input: Option<PathBuf>,
 }
 
@@ -77,10 +77,7 @@ impl FromStr for Range {
         )
         .unwrap();
 
-        let caps = re.captures(s).ok_or_else(|| {
-            anyhow!("invalid format. See `bcut --help` for range format details.")
-        })?;
-
+        let caps = re.captures(s).ok_or_else(|| anyhow!("invalid range format"))?;
         let sep = caps.name("sep").unwrap().as_str();
 
         let start: u64 = caps
@@ -137,7 +134,7 @@ fn open_input<'a>(path: &Option<PathBuf>, stdin: &'a io::Stdin) -> Result<Input<
             } else {
                 Ok(Input::File(
                     File::open(path)
-                        .with_context(|| format!("unable to open '{}'", path.to_string_lossy()))?,
+                        .with_context(|| format!("unable to open '{}'", path.display()))?,
                 ))
             }
         }
@@ -146,17 +143,15 @@ fn open_input<'a>(path: &Option<PathBuf>, stdin: &'a io::Stdin) -> Result<Input<
 
 fn run() -> Result<()> {
     let args = Args::parse();
-    // parse range manually so we can control the error message rather than letting clap do it
-    let range: Range = args.range.parse()?;
 
     let stdin = io::stdin();
     let mut input = open_input(&args.input, &stdin)?;
-    if range.start != 0 {
+    if args.range.start != 0 {
         // hexyl::Input seek only supports from Current on pipes
-        input.seek(SeekFrom::Current(range.start.try_into().unwrap()))?;
+        input.seek(SeekFrom::Current(args.range.start.try_into().unwrap()))?;
     }
 
-    let mut input: Box<dyn Read> = match range.count {
+    let mut input: Box<dyn Read> = match args.range.count {
         Some(count) => Box::new(input.take(count)),
         None => Box::new(input),
     };
