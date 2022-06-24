@@ -13,6 +13,9 @@ use clap::{AppSettings, Parser};
 use hexyl::{Input, Printer};
 use regex::Regex;
 
+#[allow(unused)]
+mod rangeparse;
+
 /// Slice a byte range from a file
 #[derive(Debug, Parser)]
 #[clap(
