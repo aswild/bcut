@@ -10,7 +10,7 @@ use std::str::FromStr;
 
 use anyhow::{anyhow, ensure, Context, Result};
 use clap::{AppSettings, Parser};
-use hexyl::{BorderStyle, Input, Printer};
+use hexyl::{Input, Printer};
 use regex::Regex;
 
 /// Slice a byte range from a file
@@ -168,7 +168,7 @@ fn run() -> Result<()> {
     };
 
     if args.hexdump {
-        let mut printer = Printer::new(&mut output, true, BorderStyle::Unicode, true);
+        let mut printer = Printer::with_default_style(output);
         printer.print_all(&mut input)?;
     } else {
         io::copy(&mut input, &mut output)?;
