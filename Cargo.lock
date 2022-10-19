@@ -41,6 +41,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hexyl",
+ "libc",
  "regex",
 ]
 

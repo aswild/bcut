@@ -9,6 +9,7 @@ edition = "2018"
 anyhow = "1"
 hexyl = { git = "https://github.com/aswild/hexyl", default-features = false }
 clap = { version = "3.2", features = ["cargo", "derive"] }
+libc = "0.2"
 
 [dependencies.regex]
 version = "1.6"
@@ -17,3 +18,4 @@ features = ["std"]
 
 [profile.release]
 lto = "thin"
+debug = 2

@@ -1,5 +1,4 @@
 #![deny(clippy::all)]
-#![forbid(unsafe_code)]
 
 use std::convert::TryInto;
 use std::fs::File;
@@ -10,7 +9,6 @@ use std::str::FromStr;
 
 use anyhow::{anyhow, ensure, Context, Result};
 use clap::{AppSettings, Parser};
-use hexyl::{Input, Printer};
 use regex::Regex;
 
 /// Slice a byte range from a file
@@ -128,19 +126,124 @@ impl FromStr for Range {
     }
 }
 
-fn open_input<'a>(path: &Option<PathBuf>, stdin: &'a io::Stdin) -> Result<Input<'a>> {
-    match path {
-        None => Ok(Input::Stdin(stdin.lock())),
-        Some(ref path) => {
-            if let Some("-") = path.to_str() {
-                Ok(Input::Stdin(stdin.lock()))
-            } else {
-                Ok(Input::File(
-                    File::open(path)
-                        .with_context(|| format!("unable to open '{}'", path.to_string_lossy()))?,
-                ))
+/// This behaves the same as [`std::io::copy`] but much faster for large inputs. We lose the
+/// Linux-specific sendfile/splice optimizations, but it seems like those don't get used by bcut
+/// anyway and it falls back to stack_buffer_copy with an 8K IO buffer. Increasing that buffer size
+/// to 1M gives nearly 3X speedup when copying large (multi-gigabyte) files on my machine.
+fn io_copy<R: Read, W: Write>(reader: &mut R, writer: &mut W) -> io::Result<u64> {
+    const BUF_SIZE: usize = 1024 * 1024;
+    let mut buf = vec![0u8; BUF_SIZE];
+    let mut total = 0;
+
+    loop {
+        let count = match reader.read(&mut buf[..]) {
+            Ok(0) => break,
+            Ok(count) => count,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        writer.write_all(&buf[..count])?;
+        total += count as u64;
+    }
+    Ok(total)
+}
+
+fn prepare_input(path: &Option<PathBuf>, range: &Range) -> io::Result<Box<dyn Read>> {
+    let is_stdin = match path {
+        Some(ref path) => matches!(path.to_str(), Some("-")),
+        None => true,
+    };
+
+    #[cfg(unix)]
+    {
+        // treat everything including stdin as a File so that we bypass std's buffering
+        use std::os::unix::io::FromRawFd;
+        let mut file = if is_stdin {
+            // SAFETY: duplicating the file descriptor can't cause memory unsafety, and we get a new fd
+            // which is owned by the file and will be closed on drop.
+            unsafe {
+                let fd = libc::dup(libc::STDIN_FILENO);
+                if fd == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                File::from_raw_fd(fd)
+            }
+        } else {
+            File::open(path.as_ref().unwrap())?
+        };
+
+        // seek forward into the input if needed
+        if range.start != 0 {
+            match file.seek(SeekFrom::Current(range.start.try_into().unwrap())) {
+                Ok(_) => (),
+                Err(e) if e.raw_os_error() == Some(libc::ESPIPE) => {
+                    // Failed to seek because this File is a pipe, so just read the first N bytes and
+                    // throw them away.
+                    let mut t = (&mut file).take(range.start);
+                    io_copy(&mut t, &mut io::sink())?;
+                }
+                Err(e) => return Err(e),
             }
         }
+
+        match range.count {
+            Some(count) => Ok(Box::new(file.take(count))),
+            None => Ok(Box::new(file)),
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        if is_stdin {
+            let mut stdin = io::stdin();
+            if range.start != 0 {
+                let mut t = stdin.lock().take(range.start);
+                io_copy(&mut t, &mut io::sink())?;
+            }
+            Ok(Box::new(stdin))
+        } else {
+            let mut file = File::open(path.as_ref().unwrap())?;
+            if range.start != 0 {
+                match file.seek(SeekFrom::Current(range.start.try_into().unwrap())) {
+                    Ok(_) => (),
+                    Err(e) => {
+                        // failed to seek, probably a pipe? Not sure about Windows semantics...
+                        let mut t = (&mut file).take(range.start);
+                        io_copy(&mut t, &mut io::sink())?;
+                    }
+                }
+            }
+            Ok(Box::new(file))
+        }
+    }
+}
+
+/// Get a writer for stdout, making it unbuffered when possible on unix. std::io::Stdout is always
+/// line-buffered, which wastes time on memchr looking for line endings when we're dumping lots of
+/// binary data.
+///
+/// Note: this opens a new file descriptor for stdout which bypasses the standard library's
+/// buffering and locking. Continuing to use println!() and io::stdout() won't cause safety issues,
+/// but could result in unexpected jumbled results on stdout if writes between this object and
+/// std's Stdout are interleaved without force-flushing.
+fn open_stdout() -> io::Result<Box<dyn Write>> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::FromRawFd;
+
+        // SAFETY: we create a new file descriptor with dup and transfer ownership of it to the
+        // returned File object, which will close that fd when it's dropped.
+        unsafe {
+            let fd = libc::dup(libc::STDOUT_FILENO);
+            if fd == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(Box::new(File::from_raw_fd(fd)))
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        Box::new(io::stdout())
     }
 }
 
@@ -149,29 +252,19 @@ fn run() -> Result<()> {
     // parse range manually so we can control the error message rather than letting clap do it
     let range: Range = args.range.parse()?;
 
-    let stdin = io::stdin();
-    let mut input = open_input(&args.input, &stdin)?;
-    if range.start != 0 {
-        // hexyl::Input seek only supports from Current on pipes
-        input.seek(SeekFrom::Current(range.start.try_into().unwrap()))?;
-    }
-
-    let mut input: Box<dyn Read> = match range.count {
-        Some(count) => Box::new(input.take(count)),
-        None => Box::new(input),
-    };
+    let mut input = prepare_input(&args.input, &range).context("failed to open input")?;
 
     let mut output: Box<dyn Write> = match &args.output {
-        None => Box::new(io::stdout()),
-        Some(p) if p.to_str() == Some("-") => Box::new(io::stdout()),
+        None => open_stdout().context("failed to open stdout")?,
+        Some(p) if p.to_str() == Some("-") => open_stdout().context("failed to open stdout")?,
         Some(path) => Box::new(File::create(path).context("failed to open output file")?),
     };
 
     if args.hexdump {
-        let mut printer = Printer::with_default_style(output);
+        let mut printer = hexyl::Printer::with_default_style(output);
         printer.print_all(&mut input)?;
     } else {
-        io::copy(&mut input, &mut output)?;
+        io_copy(&mut input, &mut output)?;
     }
 
     Ok(())
