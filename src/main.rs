@@ -1,5 +1,3 @@
-#![deny(clippy::all)]
-
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::prelude::*;
@@ -8,23 +6,19 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use anyhow::{anyhow, ensure, Context, Result};
-use clap::{AppSettings, Parser};
+use clap::Parser;
 use regex::Regex;
 
 /// Slice a byte range from a file
 #[derive(Debug, Parser)]
-#[clap(
-    max_term_width = 80,
-    setting = AppSettings::DeriveDisplayOrder,
-    version,
-)]
+#[clap(version)]
 struct Args {
     /// Output file, omit or use "-" for stdout
-    #[clap(short, long, name = "OUTFILE", parse(from_os_str))]
+    #[arg(short, long, name = "OUTFILE")]
     output: Option<PathBuf>,
 
     /// Hexdump the output
-    #[clap(short = 'H', long)]
+    #[arg(short = 'H', long)]
     hexdump: bool,
 
     /// Byte range to select
@@ -40,11 +34,11 @@ struct Args {
     ///   +M    same as -M
     ///   -     select the whole input (same as 0-)
     ///   +     select the whole input (same as 0+)
-    #[clap(name = "RANGE", verbatim_doc_comment)]
+    #[arg(value_name = "RANGE", verbatim_doc_comment)]
     range: String,
 
     /// Input file, omit or use "-" for stdin
-    #[clap(name = "FILE", parse(from_os_str))]
+    #[arg(value_name = "FILE")]
     input: Option<PathBuf>,
 }
 
@@ -261,7 +255,7 @@ fn run() -> Result<()> {
     };
 
     if args.hexdump {
-        let mut printer = hexyl::Printer::with_default_style(output);
+        let mut printer = hexyl::PrinterBuilder::new(output).build();
         printer.print_all(&mut input)?;
     } else {
         io_copy(&mut input, &mut output)?;

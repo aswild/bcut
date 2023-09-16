@@ -6,15 +6,11 @@ license = "Apache-2.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1"
+anyhow = "1.0.75"
+clap = { version = "4.4", features = ["cargo", "derive"] }
 hexyl = { git = "https://github.com/aswild/hexyl", default-features = false }
-clap = { version = "3.2", features = ["cargo", "derive"] }
 libc = "0.2"
-
-[dependencies.regex]
-version = "1.6"
-default-features = false
-features = ["std"]
+regex = { version = "1.9", default-features = false, features = ["std"] }
 
 [profile.release]
 lto = "thin"
