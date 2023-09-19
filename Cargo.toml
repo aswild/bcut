@@ -10,7 +10,8 @@ anyhow = "1.0.75"
 clap = { version = "4.4", features = ["cargo", "derive"] }
 hexyl = { git = "https://github.com/aswild/hexyl", default-features = false }
 libc = "0.2"
-regex = { version = "1.9", default-features = false, features = ["std"] }
+nom = "7.1"
+thiserror = "1.0.48"
 
 [profile.release]
 lto = "thin"
