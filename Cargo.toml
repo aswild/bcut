@@ -9,8 +9,8 @@ edition = "2021"
 anyhow = "1.0.75"
 clap = { version = "4.4", features = ["cargo", "derive"] }
 hexyl = { git = "https://github.com/aswild/hexyl", default-features = false }
-libc = "0.2"
 nom = "7.1"
+rustix = { version = "0.38", features = ["fs", "stdio"] }
 thiserror = "1.0.48"
 
 [profile.release]

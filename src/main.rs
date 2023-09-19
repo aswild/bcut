@@ -1,7 +1,6 @@
 use std::convert::TryInto;
 use std::fs::File;
-use std::io::prelude::*;
-use std::io::{self, SeekFrom};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -73,33 +72,27 @@ fn prepare_input(path: &Option<PathBuf>, range: &Range) -> io::Result<Box<dyn Re
 
     #[cfg(unix)]
     {
-        // treat everything including stdin as a File so that we bypass std's buffering
-        use std::os::unix::io::FromRawFd;
-        let mut file = if is_stdin {
-            // SAFETY: duplicating the file descriptor can't cause memory unsafety, and we get a new fd
-            // which is owned by the file and will be closed on drop.
-            unsafe {
-                let fd = libc::dup(libc::STDIN_FILENO);
-                if fd == -1 {
-                    return Err(io::Error::last_os_error());
-                }
-                File::from_raw_fd(fd)
-            }
-        } else {
-            File::open(path.as_ref().unwrap())?
+        use rustix::{
+            fs::{seek, SeekFrom},
+            io::{dup, Errno},
+            stdio::stdin,
         };
+
+        // treat everything including stdin as a File so that we bypass std's buffering
+        let mut file =
+            if is_stdin { File::from(dup(stdin())?) } else { File::open(path.as_ref().unwrap())? };
 
         // seek forward into the input if needed
         if range.start != 0 {
-            match file.seek(SeekFrom::Current(range.start.try_into().unwrap())) {
+            match seek(&file, SeekFrom::Current(range.start.try_into().unwrap())) {
                 Ok(_) => (),
-                Err(e) if e.raw_os_error() == Some(libc::ESPIPE) => {
+                Err(Errno::SPIPE) => {
                     // Failed to seek because this File is a pipe, so just read the first N bytes and
                     // throw them away.
                     let mut t = (&mut file).take(range.start);
                     io_copy(&mut t, &mut io::sink())?;
                 }
-                Err(e) => return Err(e),
+                Err(e) => return Err(e.into()),
             }
         }
 
@@ -146,21 +139,11 @@ fn prepare_input(path: &Option<PathBuf>, range: &Range) -> io::Result<Box<dyn Re
 fn open_stdout() -> io::Result<Box<dyn Write>> {
     #[cfg(unix)]
     {
-        use std::os::unix::io::FromRawFd;
-
-        // SAFETY: we create a new file descriptor with dup and transfer ownership of it to the
-        // returned File object, which will close that fd when it's dropped.
-        unsafe {
-            let fd = libc::dup(libc::STDOUT_FILENO);
-            if fd == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(Box::new(File::from_raw_fd(fd)))
-        }
+        Ok(Box::new(File::from(rustix::io::dup(rustix::stdio::stdout())?)))
     }
     #[cfg(not(unix))]
     {
-        Box::new(io::stdout())
+        Ok(Box::new(io::stdout()))
     }
 }
 
