@@ -94,7 +94,7 @@ fn io_copy<R: Read, W: Write>(reader: &mut R, writer: &mut W) -> io::Result<u64>
 
 fn prepare_input(path: &Option<PathBuf>, range: &Range) -> io::Result<Box<dyn Read>> {
     let is_stdin = match path {
-        Some(ref path) => matches!(path.to_str(), Some("-")),
+        Some(path) => matches!(path.to_str(), Some("-")),
         None => true,
     };
 
@@ -102,8 +102,8 @@ fn prepare_input(path: &Option<PathBuf>, range: &Range) -> io::Result<Box<dyn Re
     #[cfg(target_os = "linux")]
     {
         use rustix::{
-            fs::{seek, SeekFrom},
-            io::{dup, Errno},
+            fs::{SeekFrom, seek},
+            io::{Errno, dup},
             stdio::stdin,
         };
 

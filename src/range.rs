@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use nom::{
+    Finish, IResult,
     branch::alt,
     bytes::complete::tag,
     character::complete::{char, digit1, hex_digit1, one_of},
@@ -8,7 +9,6 @@ use nom::{
     error::Error as NomError,
     multi::{many0, many1},
     sequence::{preceded, terminated},
-    Finish, IResult,
 };
 
 #[derive(Debug)]

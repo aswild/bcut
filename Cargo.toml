@@ -3,7 +3,7 @@ name = "bcut"
 version = "1.1.2"
 authors = ["Allen Wild <allenwild93@gmail.com>"]
 license = "Apache-2.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 anyhow = "1.0.75"
