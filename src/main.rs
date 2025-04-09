@@ -42,6 +42,34 @@ struct Args {
     input: Option<PathBuf>,
 }
 
+trait ReadExt: Read {
+    /// Read and discard the first `count` bytes from this reader.
+    ///
+    /// This is equivalent to a forward seek, but works on pipes and other un-seekable readers.
+    fn skip(&mut self, count: u64) -> io::Result<()>;
+
+    /// Maybe limit how many bytes we'll read from this reader, always return a Box
+    fn take_dyn(self, count: Option<u64>) -> Box<dyn Read>;
+}
+
+impl<R: Read + 'static> ReadExt for R {
+    fn skip(&mut self, count: u64) -> io::Result<()> {
+        if count == 0 {
+            return Ok(());
+        }
+        let mut t = self.take(count);
+        io_copy(&mut t, &mut io::sink())?;
+        Ok(())
+    }
+
+    fn take_dyn(self, count: Option<u64>) -> Box<dyn Read> {
+        match count {
+            Some(count) => Box::new(self.take(count)),
+            None => Box::new(self),
+        }
+    }
+}
+
 /// This behaves the same as [`std::io::copy`] but much faster for large inputs. We lose the
 /// Linux-specific sendfile/splice optimizations, but it seems like those don't get used by bcut
 /// anyway and it falls back to stack_buffer_copy with an 8K IO buffer. Increasing that buffer size
@@ -70,7 +98,8 @@ fn prepare_input(path: &Option<PathBuf>, range: &Range) -> io::Result<Box<dyn Re
         None => true,
     };
 
-    #[cfg(unix)]
+    // On Linux, treat everything including stdin as a File so that we bypass std's buffering
+    #[cfg(target_os = "linux")]
     {
         use rustix::{
             fs::{seek, SeekFrom},
@@ -78,7 +107,6 @@ fn prepare_input(path: &Option<PathBuf>, range: &Range) -> io::Result<Box<dyn Re
             stdio::stdin,
         };
 
-        // treat everything including stdin as a File so that we bypass std's buffering
         let mut file =
             if is_stdin { File::from(dup(stdin())?) } else { File::open(path.as_ref().unwrap())? };
 
@@ -86,44 +114,35 @@ fn prepare_input(path: &Option<PathBuf>, range: &Range) -> io::Result<Box<dyn Re
         if range.start != 0 {
             match seek(&file, SeekFrom::Current(range.start.try_into().unwrap())) {
                 Ok(_) => (),
-                Err(Errno::SPIPE) => {
-                    // Failed to seek because this File is a pipe, so just read the first N bytes and
-                    // throw them away.
-                    let mut t = (&mut file).take(range.start);
-                    io_copy(&mut t, &mut io::sink())?;
-                }
+                // failed because this is a pipe, do a skip read instead
+                Err(Errno::SPIPE) => file.skip(range.start)?,
+                // some other error, bail
                 Err(e) => return Err(e.into()),
             }
         }
 
-        match range.count {
-            Some(count) => Ok(Box::new(file.take(count))),
-            None => Ok(Box::new(file)),
-        }
+        Ok(file.take_dyn(range.count))
     }
 
-    #[cfg(not(unix))]
+    // Otherwise, continue treating stdin as a special snowflake
+    #[cfg(not(target_os = "linux"))]
     {
+        use std::io::{Seek, SeekFrom};
+
         if is_stdin {
-            let mut stdin = io::stdin();
-            if range.start != 0 {
-                let mut t = stdin.lock().take(range.start);
-                io_copy(&mut t, &mut io::sink())?;
-            }
-            Ok(Box::new(stdin))
+            let mut stdin = io::stdin().lock();
+            stdin.skip(range.start)?;
+            Ok(stdin.take_dyn(range.count))
         } else {
             let mut file = File::open(path.as_ref().unwrap())?;
+            // TODO: can this be combined with the linux implemenation? Maybe in ReadExt::skip?
             if range.start != 0 {
                 match file.seek(SeekFrom::Current(range.start.try_into().unwrap())) {
                     Ok(_) => (),
-                    Err(e) => {
-                        // failed to seek, probably a pipe? Not sure about Windows semantics...
-                        let mut t = (&mut file).take(range.start);
-                        io_copy(&mut t, &mut io::sink())?;
-                    }
+                    Err(_) => file.skip(range.start)?,
                 }
             }
-            Ok(Box::new(file))
+            Ok(file.take_dyn(range.count))
         }
     }
 }
